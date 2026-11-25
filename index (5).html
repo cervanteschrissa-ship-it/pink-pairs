@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pink Pairs – Memory Match Game</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#ffe3ec;--card:#fff7fa;--ink:#6b1a40;--hot:#ff4d8d;--soft:#ffb8d1;--ok:#2f9e6b}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px;background:var(--bg);color:var(--ink);font-family:'Fredoka',system-ui,sans-serif}
+h1{font-size:clamp(2rem,6vw,3rem);margin:0 0 4px;letter-spacing:-.5px}
+p.sub{margin:0 0 18px;opacity:.8;text-align:center}
+.bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:18px}
+.stat{background:var(--card);border:2px solid var(--ink);border-radius:12px;padding:6px 14px;font-weight:600;min-width:96px;text-align:center}
+button.btn{font:inherit;font-weight:600;background:var(--hot);color:#fff;border:2px solid var(--ink);border-radius:12px;padding:6px 16px;cursor:pointer;box-shadow:0 3px 0 var(--ink)}
+button.btn:active{transform:translateY(3px);box-shadow:none}
+select{font:inherit;border:2px solid var(--ink);border-radius:12px;padding:6px 10px;background:var(--card);color:var(--ink)}
+.grid{display:grid;gap:10px;width:min(100%,460px)}
+.card{aspect-ratio:1;perspective:600px;border:0;background:none;padding:0;cursor:pointer}
+.inner{position:relative;width:100%;height:100%;transition:transform .35s;transform-style:preserve-3d}
+.card.up .inner,.card.done .inner{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;display:grid;place-items:center;border:2px solid var(--ink);border-radius:14px;backface-visibility:hidden;font-size:clamp(1.5rem,7vw,2.4rem)}
+.back{background:var(--hot);background-image:radial-gradient(var(--soft) 18%,transparent 20%);background-size:16px 16px}
+.front{background:var(--card);transform:rotateY(180deg)}
+.card.done .front{background:#d8f5e6;border-color:var(--ok)}
+.card:focus-visible{outline:3px solid var(--ink);outline-offset:3px;border-radius:14px}
+#msg{margin-top:18px;font-weight:600;min-height:1.5em;text-align:center}
+@media (prefers-reduced-motion:reduce){.inner{transition:none}}
+</style>
+</head>
+<body>
+<h1>Pink Pairs</h1>
+<p class="sub">Flip two cards at a time and match every pair.</p>
+<div class="bar">
+  <div class="stat">Moves: <span id="moves">0</span></div>
+  <div class="stat">Time: <span id="time">0</span>s</div>
+  <div class="stat">Best: <span id="best">–</span></div>
+</div>
+<div class="bar">
+  <select id="level" aria-label="Difficulty">
+    <option value="3x4">Easy (12 cards)</option>
+    <option value="4x4" selected>Medium (16 cards)</option>
+    <option value="5x4">Hard (20 cards)</option>
+  </select>
+  <button class="btn" id="restart">New game</button>
+</div>
+<div class="grid" id="grid"></div>
+<div id="msg" role="status"></div>
+
+<script>
+const EMOJI=["🍓","🌸","🍑","🎀","🧁","🍡","💖","🦩","🍬","🌷"];
+const grid=document.getElementById("grid"),movesEl=document.getElementById("moves"),
+timeEl=document.getElementById("time"),bestEl=document.getElementById("best"),
+msg=document.getElementById("msg"),level=document.getElementById("level");
+let first=null,lock=false,moves=0,matched=0,total=0,timer=null,seconds=0;
+
+function bestKey(){return "pinkpairs-best-"+level.value}
+function loadBest(){
+  try{const b=localStorage.getItem(bestKey());bestEl.textContent=b?b+" moves":"–"}
+  catch(e){bestEl.textContent="–"}
+}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
+function start(){
+  clearInterval(timer);timer=null;seconds=0;moves=0;matched=0;first=null;lock=false;
+  movesEl.textContent=0;timeEl.textContent=0;msg.textContent="";
+  const [cols,rows]=level.value.split("x").map(Number);
+  total=cols*rows/2;
+  const pairs=EMOJI.slice(0,total);
+  const deck=shuffle([...pairs,...pairs]);
+  grid.style.gridTemplateColumns=`repeat(${cols},1fr)`;
+  grid.innerHTML="";
+  deck.forEach(e=>{
+    const b=document.createElement("button");
+    b.className="card";b.dataset.v=e;b.setAttribute("aria-label","Hidden card");
+    b.innerHTML=`<div class="inner"><div class="face back"></div><div class="face front">${e}</div></div>`;
+    b.addEventListener("click",()=>flip(b));
+    grid.appendChild(b);
+  });
+  loadBest();
+}
+
+function flip(c){
+  if(lock||c===first||c.classList.contains("done"))return;
+  if(!timer)timer=setInterval(()=>{seconds++;timeEl.textContent=seconds},1000);
+  c.classList.add("up");c.setAttribute("aria-label","Card "+c.dataset.v);
+  if(!first){first=c;return}
+  moves++;movesEl.textContent=moves;
+  if(first.dataset.v===c.dataset.v){
+    [first,c].forEach(x=>{x.classList.remove("up");x.classList.add("done")});
+    first=null;matched++;
+    if(matched===total)win();
+  }else{
+    lock=true;const a=first;first=null;
+    setTimeout(()=>{[a,c].forEach(x=>{x.classList.remove("up");x.setAttribute("aria-label","Hidden card")});lock=false},800);
+  }
+}
+
+function win(){
+  clearInterval(timer);timer=null;
+  let note="";
+  try{
+    const b=Number(localStorage.getItem(bestKey()));
+    if(!b||moves<b){localStorage.setItem(bestKey(),moves);note=" New best!"}
+  }catch(e){}
+  msg.textContent=`You matched all pairs in ${moves} moves and ${seconds}s.${note}`;
+  loadBest();
+}
+
+document.getElementById("restart").addEventListener("click",start);
+level.addEventListener("change",start);
+start();
+</script>
+</body>
+</html>
